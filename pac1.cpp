@@ -1,7 +1,7 @@
 #include <vector>
 #include <iostream>
 #include <bitset>
-#include <ext/pb_ds/priority_queue.hpp>
+#include <queue>
 #include <string>
 #include <cassert>
 
@@ -242,9 +242,11 @@ void read_quest(Field &field, vector<Enemy> &enemies, Pos &mine,
 
     vector<string> buf;
     string sbuf;
-    for (int i = 0; i < h; ++i) {
-        cin >> sbuf;
+    for (int i = 0; i < h;) {
+        getline(cin, sbuf);
+        if (sbuf.size() < w) continue;
         buf.push_back(sbuf);
+        ++i;
     }
     field.width = w;
     field.height = h;
@@ -277,7 +279,7 @@ void read_quest(Field &field, vector<Enemy> &enemies, Pos &mine,
 }
 
 struct State {
-    char turn;
+    short turn;
     short dot_count;
     Pos mine;
     vector<Enemy> enemies;
@@ -296,7 +298,7 @@ struct State {
     {}
 
     int point() const {
-        return -dot_count;
+        return -dot_count*10;
     }
 };
 
@@ -316,8 +318,8 @@ bool check_kill(const State &old, const State &next) {
 void print_state(const State &s, const Field &f)
 {
     cerr << "--- state ---\n"
-        << "turn: " << s.turn << "\n"
-        << "dots: " << s.dot_count << "\n";
+        << "turn: " << (int)s.turn << "\n"
+        << "dots: " << (int)s.dot_count << "\n";
     for (int y = 0; y < f.height; ++y) {
         for (int x = 0; x < f.width; ++x) {
             if (!f.check_movable(x,y)) {
@@ -391,6 +393,12 @@ bool check_goal(const State &s, const State &initial, const Field &f) {
     return false;
 }
 
+struct comp_state {
+    bool operator()(const State *lh, const State *rh) {
+        return lh->point() < rh->point();
+    }
+};
+
 int main()
 {
     Field field;
@@ -400,96 +408,120 @@ int main()
     int limit;
     read_quest(field, enemies, mine, dots, limit);
 
-    priority_queue<State> states;
+    priority_queue<State*, vector<State*>, comp_state> states;
     State initial_state(0, mine, enemies, dots);
-    states.push(initial_state);
+    states.push(new State(initial_state));
 
-    static int check_count = 10000;
+    static int check_count = 40000;
 
     while (!states.empty()) {
-        if (states.size() > 2000) {
+        if (states.size() > 4000) {
             cerr << "cutting down" << endl;
-            priority_queue<State> new_states;
-            for (int i = 0; i < 1000; ++i) {
+            priority_queue<State*, vector<State*>, comp_state> new_states;
+            for (int i = 0; i < 2000; ++i) {
                 new_states.push(states.top());
+                states.pop();
+            }
+            while (!states.empty()) {
+                delete states.top();
                 states.pop();
             }
             states = new_states;
         }
-        State st = states.top();
+        State *st = states.top();
         states.pop();
         if (--check_count == 0) {
-            cerr << "Checking: " << st.dot_count << endl;
-            check_count = 10000;
+            cerr << "Checking: " << st->dot_count << endl;
+            check_count = 40000;
         }
-        State next(st);
-        for (vector<Enemy>::iterator it = next.enemies.begin();
-                it != next.enemies.end(); ++it) {
-            it->move(field, next.turn, next.mine);
+        State *next = new State(*st);
+        for (vector<Enemy>::iterator it = next->enemies.begin();
+                it != next->enemies.end(); ++it) {
+            it->move(field, next->turn, next->mine);
         }
-        next.turn++;
+        next->turn++;
 
-        if (field.check_movable(next.mine.x, next.mine.y+1)) {
-            State s(next);
-            s.mine.y++;
-            if (!check_kill(st, s)) {
-                s.log += 'j';
-                if (s.dots.test(s.mine.y * field.width + s.mine.x)) {
-                    s.dot_count--;
-                    s.dots.reset(s.mine.y * field.width + s.mine.x);
-                    if (check_goal(s, initial_state, field))
+        if (field.check_movable(next->mine.x, next->mine.y+1)) {
+            State *s = new State(*next);
+            s->mine.y++;
+            if (!check_kill(*st, *s)) {
+                s->log += 'j';
+                if (s->dots.test(s->mine.y * field.width + s->mine.x)) {
+                    s->dot_count--;
+                    s->dots.reset(s->mine.y * field.width + s->mine.x);
+                    if (check_goal(*s, initial_state, field)) {
+                        delete s;
                         break;
+                    }
                 }
-                if (s.turn + s.dot_count < limit) states.push(s);
+                if (s->turn + s->dot_count < limit) states.push(s);
+                else delete s;
             }
+            else delete s;
         }
-        if (field.check_movable(next.mine.x, next.mine.y-1)) {
-            State s(next);
-            s.mine.y--;
-            if (!check_kill(st, s)) {
-                s.log += 'k';
-                if (s.dots.test(s.mine.y * field.width + s.mine.x)) {
-                    s.dot_count--;
-                    s.dots.reset(s.mine.y * field.width + s.mine.x);
-                    if (check_goal(s, initial_state, field))
+        if (field.check_movable(next->mine.x, next->mine.y-1)) {
+            State *s = new State(*next);
+            s->mine.y--;
+            if (!check_kill(*st, *s)) {
+                s->log += 'k';
+                if (s->dots.test(s->mine.y * field.width + s->mine.x)) {
+                    s->dot_count--;
+                    s->dots.reset(s->mine.y * field.width + s->mine.x);
+                    if (check_goal(*s, initial_state, field)) {
+                        delete s;
                         break;
+                    }
                 }
-                if (s.turn + s.dot_count < limit) states.push(s);
+                if (s->turn + s->dot_count < limit) states.push(s);
+                else delete s;
             }
+            else delete s;
         }
-        if (field.check_movable(next.mine.x+1, next.mine.y)) {
-            State s(next);
-            s.mine.x++;
-            if (!check_kill(st, s)) {
-                s.log += 'l';
-                if (s.dots.test(s.mine.y * field.width + s.mine.x)) {
-                    s.dot_count--;
-                    s.dots.reset(s.mine.y * field.width + s.mine.x);
-                    if (check_goal(s, initial_state, field))
+        if (field.check_movable(next->mine.x+1, next->mine.y)) {
+            State *s = new State(*next);
+            s->mine.x++;
+            if (!check_kill(*st, *s)) {
+                s->log += 'l';
+                if (s->dots.test(s->mine.y * field.width + s->mine.x)) {
+                    s->dot_count--;
+                    s->dots.reset(s->mine.y * field.width + s->mine.x);
+                    if (check_goal(*s, initial_state, field)) {
+                        delete s;
                         break;
+                    }
                 }
-                if (s.turn + s.dot_count < limit) states.push(s);
+                if (s->turn + s->dot_count < limit) states.push(s);
+                else delete s;
             }
+            else delete s;
         }
-        if (field.check_movable(next.mine.x-1, next.mine.y)) {
-            State s(next);
-            s.mine.x--;
-            if (!check_kill(st, s)) {
-                s.log += 'h';
-                if (s.dots.test(s.mine.y * field.width + s.mine.x)) {
-                    s.dot_count--;
-                    s.dots.reset(s.mine.y * field.width + s.mine.x);
-                    if (check_goal(s, initial_state, field))
+        if (field.check_movable(next->mine.x-1, next->mine.y)) {
+            State *s = new State(*next);
+            s->mine.x--;
+            if (!check_kill(*st, *s)) {
+                s->log += 'h';
+                if (s->dots.test(s->mine.y * field.width + s->mine.x)) {
+                    s->dot_count--;
+                    s->dots.reset(s->mine.y * field.width + s->mine.x);
+                    if (check_goal(*s, initial_state, field)) {
+                        delete s;
                         break;
+                    }
                 }
-                if (s.turn + s.dot_count < limit) states.push(s);
+                if (s->turn + s->dot_count < limit) states.push(s);
+                else delete s;
             }
+            else delete s;
         }
 
-        if (!check_kill(st, next)) {
-            st.log += '.';
-            if (st.turn + st.dot_count < limit) states.push(st);
+        if (!check_kill(*st, *next)) {
+            next->log += '.';
+            if (next->turn + next->dot_count < limit) states.push(next);
+            else delete next;
         }
+        else delete next;
+
+        delete st;
     }
 }
 
