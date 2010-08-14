@@ -393,6 +393,30 @@ bool check_goal(const State &s, const State &initial, const Field &f) {
     return false;
 }
 
+bool check_limit(const State &state, const Field &field, int limit)
+{
+    int mx = state.mine.x;
+    int my = state.mine.y;
+    int W = field.width;
+    int H = field.height;
+    int off = 0;
+    int min_dist = 1000;
+
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            if (state.dots.test(off++)) {
+                int dist;
+                dist  = (mx - x) < 0 ? x - mx : mx - x;
+                dist += (my - y) < 0 ? y - my : my - y;
+                if (dist < min_dist)
+                    min_dist = dist;
+            }
+        }
+    }
+
+    return (state.dot_count + state.turn + min_dist) < limit;
+}
+
 struct comp_state {
     bool operator()(const State *lh, const State *rh) {
         return lh->point() < rh->point();
@@ -454,7 +478,7 @@ int main()
                         break;
                     }
                 }
-                if (s->turn + s->dot_count < limit) states.push(s);
+                if (check_limit(*s, field, limit)) states.push(s);
                 else delete s;
             }
             else delete s;
@@ -472,7 +496,7 @@ int main()
                         break;
                     }
                 }
-                if (s->turn + s->dot_count < limit) states.push(s);
+                if (check_limit(*s, field, limit)) states.push(s);
                 else delete s;
             }
             else delete s;
@@ -490,7 +514,7 @@ int main()
                         break;
                     }
                 }
-                if (s->turn + s->dot_count < limit) states.push(s);
+                if (check_limit(*s, field, limit)) states.push(s);
                 else delete s;
             }
             else delete s;
@@ -508,7 +532,7 @@ int main()
                         break;
                     }
                 }
-                if (s->turn + s->dot_count < limit) states.push(s);
+                if (check_limit(*s, field, limit)) states.push(s);
                 else delete s;
             }
             else delete s;
@@ -516,7 +540,7 @@ int main()
 
         if (!check_kill(*st, *next)) {
             next->log += '.';
-            if (next->turn + next->dot_count < limit) states.push(next);
+            if (check_limit(*next, field, limit)) states.push(next);
             else delete next;
         }
         else delete next;
