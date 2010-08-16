@@ -395,26 +395,43 @@ bool check_goal(const State &s, const State &initial, const Field &f) {
 
 bool check_limit(const State &state, const Field &field, int limit)
 {
+#if 1
     int mx = state.mine.x;
     int my = state.mine.y;
     int W = field.width;
     int H = field.height;
     int off = 0;
-    int min_dist = 1000;
+    int dist;
 
-    for (int y = 0; y < H; ++y) {
-        for (int x = 0; x < W; ++x) {
-            if (state.dots.test(off++)) {
-                int dist;
-                dist  = (mx - x) < 0 ? x - mx : mx - x;
-                dist += (my - y) < 0 ? y - my : my - y;
-                if (dist < min_dist)
-                    min_dist = dist;
+#if 1
+    if (state.dots.test(8*W+10) && state.dots.test(9*W+49)) {
+        for (vector<Enemy>::const_iterator it = state.enemies.begin();
+                it != state.enemies.end(); ++it) {
+            if (it->type == 'H' || it->type == 'V') {
+                int dx = it->curr.x - mx;
+                if (dx < 0) dx = -dx;
+                int dy = it->curr.y - my;
+                if (dy < 0) dy = -dy;
+                if (dx+dy < 4) return false;
             }
         }
     }
+#endif
 
-    return (state.dot_count + state.turn + min_dist) < limit;
+    for (dist = 1; dist < 100; ++dist) {
+        for (int y = my-dist; y <= my+dist; ++y) {
+            if (y < 1 || H <= y) continue;
+            int d = my-y < 0 ? y-my : my-y;
+            d = dist - d;
+            if ((mx - d > 1) && state.dots.test(y*W+mx-d)) goto dist_found;
+            if ((mx + d <=W) && state.dots.test(y*W+mx+d)) goto dist_found;
+        }
+    }
+dist_found:
+#else
+    int dist = 1;
+#endif
+    return (state.dot_count + state.turn + dist - 1) < limit;
 }
 
 struct comp_state {
@@ -430,19 +447,20 @@ int main()
     Pos mine;
     bitset<992> dots;
     int limit;
+    int best = 10;
     read_quest(field, enemies, mine, dots, limit);
 
     priority_queue<State*, vector<State*>, comp_state> states;
     State initial_state(0, mine, enemies, dots);
     states.push(new State(initial_state));
 
-    static int check_count = 40000;
+    static int check_count = 100000;
 
     while (!states.empty()) {
-        if (states.size() > 4000) {
-            cerr << "cutting down" << endl;
+        if (states.size() > 20000) {
+            cerr << "\ncutting down" << endl;
             priority_queue<State*, vector<State*>, comp_state> new_states;
-            for (int i = 0; i < 2000; ++i) {
+            for (int i = 0; i < 16000; ++i) {
                 new_states.push(states.top());
                 states.pop();
             }
@@ -455,8 +473,13 @@ int main()
         State *st = states.top();
         states.pop();
         if (--check_count == 0) {
-            cerr << "Checking: " << st->dot_count << endl;
-            check_count = 40000;
+            cerr << ' ' << st->dot_count << ' ';
+            check_count = 100000;
+        }
+        if (st->dot_count < best) {
+            best = st->dot_count;
+            cerr << "Best: " << best << endl;
+            cout << st->log << endl;
         }
         State *next = new State(*st);
         for (vector<Enemy>::iterator it = next->enemies.begin();
