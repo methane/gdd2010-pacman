@@ -284,10 +284,9 @@ struct Global {
     }
 
 };
+Global g;
 
-
-void read_quest(Global &g, vector<Enemy> &enemies, Pos &mine,
-        bitset<992> &dots, int &limit)
+void read_quest(vector<Enemy> &enemies, Pos &mine, bitset<992> &dots, int &limit)
 {
     int w, h;
     cin >> limit;
@@ -351,7 +350,7 @@ struct State {
     {}
 
     int point() const {
-        return -dot_count*10;
+        return -dot_count*100;
     }
 };
 
@@ -479,21 +478,20 @@ struct comp_state {
 
 int main()
 {
-    Global g;
     Field &field = g.field;
     vector<Enemy> enemies;
     Pos mine;
     bitset<992> dots;
     int limit;
-    int best = 10;
-    read_quest(g, enemies, mine, dots, limit);
+    read_quest(enemies, mine, dots, limit);
     const int initial_limit = limit;
 
     priority_queue<State*, vector<State*>, comp_state> states;
     State initial_state(0, mine, enemies, dots);
     states.push(new State(initial_state));
 
-    static int check_count = 100000;
+    int check_count = 100000;
+    int best = 100000;
 
     while (!states.empty()) {
         if (states.size() > 20000) {
@@ -511,14 +509,12 @@ int main()
         }
         State *st = states.top();
         states.pop();
-        if (--check_count == 0) {
-            cerr << ' ' << st->dot_count << ' ';
-            check_count = 100000;
-        }
         if (st->dot_count < best) {
             best = st->dot_count;
-            cerr << "Best: " << best << endl;
-            cout << st->log << endl;
+        }
+        if (--check_count == 0) {
+            cerr << ' ' << st->dot_count << ' ';
+            check_count = best = 100000;
         }
         State *next = new State(*st);
         for (vector<Enemy>::iterator it = next->enemies.begin();
