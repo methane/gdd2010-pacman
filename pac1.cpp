@@ -7,21 +7,28 @@
 
 using namespace std;
 
+const int UP=+1, DOWN=-1, LEFT=-2, RIGHT=+2;
+
 struct Pos {
-    char x,y;
+    short x,y;
 };
 
 bool operator==(const Pos &lh, const Pos &rh) {
     return lh.x == rh.x && lh.y == rh.y;
 }
 
-const int UP=+1, DOWN=-1, LEFT=-2, RIGHT=+2;
-
 class Field {
 public:
-    bitset<992> can_move;
     int width, height;
+    bitset<992> can_move;
 
+    void init(int width, int height) {
+        this->width = width;
+        this->height = height;
+        can_move.set();
+    }
+
+    // 壁への衝突チェック. 移動可能なら true.
     bool check_movable(int x, int y) const {
         return can_move.test(y * width + x);
     }
@@ -29,6 +36,7 @@ public:
         return check_movable(pos.x, pos.y);
     }
 };
+
 
 class Enemy {
 public:
@@ -49,6 +57,10 @@ public:
         curr = rh.curr;
         last_direct = rh.last_direct;
         j_count = rh.j_count;
+    }
+
+    bool is_dynamic() const {
+        return type == 'V' || type == 'H';
     }
 
     void move_t0(const Field &field, int t, const Pos &target) {
@@ -231,7 +243,46 @@ public:
     }
 };
 
-void read_quest(Field &field, vector<Enemy> &enemies, Pos &mine,
+struct Global {
+    int max_turn;
+    Field field;
+    // ターンごとの、自機にLRJタイプの敵.
+    vector<vector<Enemy> > static_enemies;
+    vector<Enemy> dynamic_enemies;
+
+    void init(int max_turn, int width, int height) {
+        this->max_turn = max_turn;
+        field.init(width, height);
+        static_enemies.resize(max_turn+1);
+    }
+
+    // 自機の位置が影響しない敵を登録する.
+    void add_enemy(char type, int x, int y) {
+        Enemy enemy = Enemy(type, x, y);
+        if (enemy.is_dynamic()) {
+            dynamic_enemies.push_back(enemy);
+        } else {
+            static_enemies[0].push_back(enemy);
+        }
+    }
+
+    void pre_calc() {
+        int num_enemies = static_enemies[0].size();
+        Pos pos;
+        pos.x = pos.y = 0;
+        for (int t = 0; t+1 < max_turn; ++t) {
+            for (int e = 0; e < num_enemies; ++e) {
+                Enemy ene = static_enemies[t][e];
+                ene.move(field, t, pos);
+                static_enemies[t+1].push_back(ene);
+            }
+        }
+    }
+
+};
+
+
+void read_quest(Global &g, vector<Enemy> &enemies, Pos &mine,
         bitset<992> &dots, int &limit)
 {
     int w, h;
@@ -239,26 +290,19 @@ void read_quest(Field &field, vector<Enemy> &enemies, Pos &mine,
     cin >> w >> h;
 
     cerr << "limit: " << limit << "\nw x h = " << w << ' ' << h << endl;
-
-    vector<string> buf;
-    string sbuf;
-    for (int i = 0; i < h;) {
-        getline(cin, sbuf);
-        if (sbuf.size() < w) continue;
-        buf.push_back(sbuf);
-        ++i;
-    }
-    field.width = w;
-    field.height = h;
-    field.can_move.set();
+    g.init(limit, w, h);
     dots.reset();
 
-    for (int y = 0; y < h; ++y) {
+    for (int y = 0; y < h;) {
+        string sbuf;
+        getline(cin, sbuf);
+        if (sbuf.size() < w) continue;
+
         for (int x = 0; x < w; ++x) {
-            int c = buf[y][x];
+            int c = sbuf[x];
             switch (c) {
             case '#':
-                field.can_move.reset(y*w+x);
+                g.field.can_move.reset(y*w+x);
                 break;
             case '@':
                 mine.x = x;
@@ -269,20 +313,25 @@ void read_quest(Field &field, vector<Enemy> &enemies, Pos &mine,
                 break;
             case 'V':
             case 'H':
+                enemies.push_back(Enemy(c, x, y));
             case 'L':
             case 'R':
             case 'J':
-                enemies.push_back(Enemy(c, x, y));
+                g.add_enemy(c, x, y);
+                break;
             }
         }
+        ++y;
     }
+
+    g.pre_calc();
 }
 
 struct State {
     short turn;
     short dot_count;
     Pos mine;
-    vector<Enemy> enemies;
+    vector<Enemy> enemies; //VHタイプの敵たち.
     bitset<992> dots;
     string log;
 
@@ -306,8 +355,21 @@ bool operator < (const State &lh, const State &rh) {
     return lh.point() < rh.point();
 }
 
-bool check_kill(const State &old, const State &next) {
-    for (size_t i = 0; i < next.enemies.size(); ++i) {
+// 敵に殺されたらtrue
+bool check_kill(const State &old, const State &next, const Global &g) {
+    int num_enemies;
+    // RLJ
+    num_enemies = g.static_enemies[0].size();
+    for (int i = 0; i < num_enemies; ++i) {
+        if (next.mine == g.static_enemies[next.turn][i].curr)
+            return true;
+        if (next.mine == g.static_enemies[old.turn][i].curr &&
+                old.mine == g.static_enemies[next.turn][i].curr)
+            return true;
+    }
+    //VH
+    num_enemies = next.enemies.size();
+    for (int i = 0; i < num_enemies; ++i) {
         if (next.mine == next.enemies[i].curr) return true;
         if (next.mine == old.enemies[i].curr &&
                 old.mine == next.enemies[i].curr) return true;
@@ -353,41 +415,11 @@ void print_state(const State &s, const Field &f)
     cerr << endl;
 }
 
-bool check_goal(const State &s, const State &initial, const Field &f) {
+bool check_goal(const State &s, int &limit) {
     if (s.dot_count == 0) {
         cerr << "goal!! : " << s.turn << "\n";
         cout << s.log << endl;
-
-        State sl = initial;
-        print_state(sl, f);
-        for (int i = 0; i < s.log.size(); ++i) {
-            for (vector<Enemy>::iterator it = sl.enemies.begin();
-                    it != sl.enemies.end(); ++it) {
-                it->move(f, sl.turn, sl.mine);
-            }
-            sl.turn++;
-
-            switch (s.log[i]) {
-            case 'h':
-                sl.mine.x--;
-                break;
-            case 'l':
-                sl.mine.x++;
-                break;
-            case 'j':
-                sl.mine.y++;
-                break;
-            case 'k':
-                sl.mine.y--;
-                break;
-            }
-
-            if (sl.dots.test(sl.mine.y * f.width + sl.mine.x)) {
-                sl.dot_count--;
-                sl.dots.reset(sl.mine.y * f.width + sl.mine.x);
-            }
-            print_state(sl, f);
-        }
+        limit = s.log.size()-1;
         return true;
     }
     return false;
@@ -442,13 +474,14 @@ struct comp_state {
 
 int main()
 {
-    Field field;
+    Global g;
+    Field &field = g.field;
     vector<Enemy> enemies;
     Pos mine;
     bitset<992> dots;
     int limit;
     int best = 10;
-    read_quest(field, enemies, mine, dots, limit);
+    read_quest(g, enemies, mine, dots, limit);
 
     priority_queue<State*, vector<State*>, comp_state> states;
     State initial_state(0, mine, enemies, dots);
@@ -491,12 +524,12 @@ int main()
         if (field.check_movable(next->mine.x, next->mine.y+1)) {
             State *s = new State(*next);
             s->mine.y++;
-            if (!check_kill(*st, *s)) {
+            if (!check_kill(*st, *s, g)) {
                 s->log += 'j';
                 if (s->dots.test(s->mine.y * field.width + s->mine.x)) {
                     s->dot_count--;
                     s->dots.reset(s->mine.y * field.width + s->mine.x);
-                    if (check_goal(*s, initial_state, field)) {
+                    if (check_goal(*s, limit)) {
                         delete s;
                         break;
                     }
@@ -509,12 +542,12 @@ int main()
         if (field.check_movable(next->mine.x, next->mine.y-1)) {
             State *s = new State(*next);
             s->mine.y--;
-            if (!check_kill(*st, *s)) {
+            if (!check_kill(*st, *s, g)) {
                 s->log += 'k';
                 if (s->dots.test(s->mine.y * field.width + s->mine.x)) {
                     s->dot_count--;
                     s->dots.reset(s->mine.y * field.width + s->mine.x);
-                    if (check_goal(*s, initial_state, field)) {
+                    if (check_goal(*s, limit)) {
                         delete s;
                         break;
                     }
@@ -527,12 +560,12 @@ int main()
         if (field.check_movable(next->mine.x+1, next->mine.y)) {
             State *s = new State(*next);
             s->mine.x++;
-            if (!check_kill(*st, *s)) {
+            if (!check_kill(*st, *s, g)) {
                 s->log += 'l';
                 if (s->dots.test(s->mine.y * field.width + s->mine.x)) {
                     s->dot_count--;
                     s->dots.reset(s->mine.y * field.width + s->mine.x);
-                    if (check_goal(*s, initial_state, field)) {
+                    if (check_goal(*s, limit)) {
                         delete s;
                         break;
                     }
@@ -545,12 +578,12 @@ int main()
         if (field.check_movable(next->mine.x-1, next->mine.y)) {
             State *s = new State(*next);
             s->mine.x--;
-            if (!check_kill(*st, *s)) {
+            if (!check_kill(*st, *s, g)) {
                 s->log += 'h';
                 if (s->dots.test(s->mine.y * field.width + s->mine.x)) {
                     s->dot_count--;
                     s->dots.reset(s->mine.y * field.width + s->mine.x);
-                    if (check_goal(*s, initial_state, field)) {
+                    if (check_goal(*s, limit)) {
                         delete s;
                         break;
                     }
@@ -561,7 +594,7 @@ int main()
             else delete s;
         }
 
-        if (!check_kill(*st, *next)) {
+        if (!check_kill(*st, *next, g)) {
             next->log += '.';
             if (check_limit(*next, field, limit)) states.push(next);
             else delete next;
