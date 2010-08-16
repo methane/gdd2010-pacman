@@ -5,6 +5,10 @@
 #include <string>
 #include <cassert>
 
+#ifndef PAC3
+#define PAC3 (0)
+#endif
+
 using namespace std;
 
 const int UP=+1, DOWN=-1, LEFT=-2, RIGHT=+2;
@@ -435,7 +439,8 @@ bool check_limit(const State &state, const Field &field, int limit)
     int off = 0;
     int dist;
 
-#if 0
+#if PAC3
+    // TODO: 行き止まり箇所の自動検出.
     if (state.dots.test(8*W+10) && state.dots.test(9*W+49)) {
         for (vector<Enemy>::const_iterator it = state.enemies.begin();
                 it != state.enemies.end(); ++it) {
