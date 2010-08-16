@@ -435,7 +435,7 @@ bool check_limit(const State &state, const Field &field, int limit)
     int off = 0;
     int dist;
 
-#if 1
+#if 0
     if (state.dots.test(8*W+10) && state.dots.test(9*W+49)) {
         for (vector<Enemy>::const_iterator it = state.enemies.begin();
                 it != state.enemies.end(); ++it) {
@@ -482,6 +482,7 @@ int main()
     int limit;
     int best = 10;
     read_quest(g, enemies, mine, dots, limit);
+    const int initial_limit = limit;
 
     priority_queue<State*, vector<State*>, comp_state> states;
     State initial_state(0, mine, enemies, dots);
@@ -531,7 +532,7 @@ int main()
                     s->dots.reset(s->mine.y * field.width + s->mine.x);
                     if (check_goal(*s, limit)) {
                         delete s;
-                        break;
+                        continue;
                     }
                 }
                 if (check_limit(*s, field, limit)) states.push(s);
@@ -549,7 +550,7 @@ int main()
                     s->dots.reset(s->mine.y * field.width + s->mine.x);
                     if (check_goal(*s, limit)) {
                         delete s;
-                        break;
+                        continue;
                     }
                 }
                 if (check_limit(*s, field, limit)) states.push(s);
@@ -567,7 +568,7 @@ int main()
                     s->dots.reset(s->mine.y * field.width + s->mine.x);
                     if (check_goal(*s, limit)) {
                         delete s;
-                        break;
+                        continue;
                     }
                 }
                 if (check_limit(*s, field, limit)) states.push(s);
@@ -585,7 +586,7 @@ int main()
                     s->dots.reset(s->mine.y * field.width + s->mine.x);
                     if (check_goal(*s, limit)) {
                         delete s;
-                        break;
+                        continue;
                     }
                 }
                 if (check_limit(*s, field, limit)) states.push(s);
@@ -602,6 +603,10 @@ int main()
         else delete next;
 
         delete st;
+    }
+    
+    if (initial_limit == limit) {
+        cerr << "Can't find any ways." << endl;
     }
 }
 
