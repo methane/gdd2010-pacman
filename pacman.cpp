@@ -4,6 +4,7 @@
 #include <queue>
 #include <string>
 #include <cassert>
+#include <map>
 
 #ifndef PAC3
 #define PAC3 (0)
@@ -48,6 +49,9 @@ bool operator<(const Pos &lh, const Pos &rh) {
 }
 bool operator==(const Pos &lh, const Pos &rh) {
     return lh.pos_ == rh.pos_;
+}
+bool operator!=(const Pos &lh, const Pos &rh) {
+    return !(lh == rh);
 }
 
 
@@ -239,6 +243,12 @@ public:
         }
     }
 };
+bool operator==(const Enemy &lh, const Enemy &rh) {
+    return lh.curr == rh.curr &&
+        lh.type == rh.type &&
+        lh.last_direct == rh.last_direct &&
+        lh.j_count == rh.j_count;
+}
 
 struct Global {
     int max_turn;
@@ -522,6 +532,79 @@ inline State* self_move(const State &curr, const State &next, int direction)
     delete s;
     return 0;
 }
+typedef priority_queue<State*, vector<State*>, comp_state> StateQueue;
+
+void next_1turn(State *current, vector<State*> &moved_states)
+{
+    State *next = new State(*current);
+    for (vector<Enemy>::iterator it = next->enemies.begin();
+            it != next->enemies.end(); ++it) {
+        it->move(field, next->mine);
+    }
+    next->turn++;
+
+    State *moved;
+    moved = self_move(*current, *next, DOWN);
+    if (moved) moved_states.push_back(moved);
+
+    moved = self_move(*current, *next, UP);
+    if (moved) moved_states.push_back(moved);
+
+    moved = self_move(*current, *next, LEFT);
+    if (moved) moved_states.push_back(moved);
+
+    moved = self_move(*current, *next, RIGHT);
+    if (moved) moved_states.push_back(moved);
+
+    if (check_kill(*current, *next) || !check_limit(*next)) {
+        delete next;
+    } else {
+        next->log += (char)NO_DIRECTION;
+        moved_states.push_back(next);
+    }
+}
+
+void next_3turn(State *current, StateQueue &queue)
+{
+    vector<State*> moved_states;
+
+    next_1turn(current, moved_states);
+
+    for (int dt=1; dt < 3; ++dt) {
+        vector<State*> next_states;
+        for (int i = 0; i < moved_states.size(); ++i) {
+            next_1turn(moved_states[i], next_states);
+            delete moved_states[i];
+        }
+        moved_states.swap(next_states);
+    }
+
+    multimap<Pos, State*> checked_states;
+    multimap<Pos, State*>::iterator it;
+
+    for (int i = 0; i < moved_states.size(); ++i) {
+        State *p = moved_states[i];
+        it = checked_states.find(p->mine);
+        for (;;++it) {
+            if (it == checked_states.end() ||
+                    ((it->second->mine) != (p->mine))) {
+                checked_states.insert(make_pair(p->mine, p));
+                break;
+            }
+            State *p0 = it->second;
+            if (p->enemies != p0->enemies) continue;
+            if (p->dot_count < p0->dot_count) {
+                it->second = p;
+                delete p0;
+                break;
+            }
+        }
+    }
+
+    for (it = checked_states.begin(); it != checked_states.end(); ++it) {
+        queue.push(it->second);
+    }
+}
 
 int main()
 {
@@ -560,6 +643,7 @@ int main()
             cerr << ' ' << st->dot_count << ' ';
             check_count = best = 100000;
         }
+#if 0
         State *next = new State(*st);
         for (vector<Enemy>::iterator it = next->enemies.begin();
                 it != next->enemies.end(); ++it) {
@@ -587,10 +671,12 @@ int main()
             next->log += (char)NO_DIRECTION;
             states.push(next);
         }
-
+#else
+        next_3turn(st, states);
+#endif
         delete st;
     }
-    
+
     if (global.max_turn == global.limit) {
         cerr << "Can't find any ways." << endl;
     }
