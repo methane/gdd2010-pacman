@@ -571,6 +571,98 @@ void next_1turn(State *current, vector<State*> &moved_states)
     }
 }
 
+// lh に含まれるドットが全部 rh に含まれるならtrue.
+// つまり、rh は要らない子.
+inline bool dots_cover(const State &lh, const State &rh)
+{
+    return (lh.dots & rh.dots) == lh.dots;
+}
+
+typedef multimap<Pos, State*> statemap;
+
+void add_new_state(State *ps, statemap &smap)
+{
+    statemap::iterator it = smap.find(ps->mine);
+
+    for (; it != smap.end() && it->second->mine == ps->mine; ++it) {
+        State *p0 = it->second;
+        if (ps->enemies != p0->enemies) continue;
+
+        int dot_diff = ps->dot_count - p0->dot_count;
+        if (dot_diff == 0) {
+            if (ps->dots == p0->dots) {
+                delete ps;
+                return;
+            }
+            continue;
+        }
+        else if (dot_diff < 0) {
+            // ps のほうがたくさん消費している場合.
+            if (dots_cover(*ps, *p0)) {
+                it->second = ps;
+                delete p0;
+                return;
+            }
+        }
+        else if (dot_diff > 0) {
+            if (dots_cover(*p0, *ps)) {
+                delete ps;
+                return;
+            }
+        }
+    }
+    smap.insert(make_pair(ps->mine, ps));
+}
+
+void next_1turn(State *current, statemap &moved_states)
+{
+    State *next = new State(*current);
+    for (vector<Enemy>::iterator it = next->enemies.begin();
+            it != next->enemies.end(); ++it) {
+        it->move(field, next->mine);
+    }
+    next->turn++;
+
+    State *moved;
+    moved = self_move(*current, *next, DOWN);
+    if (moved) add_new_state(moved, moved_states);
+
+    moved = self_move(*current, *next, UP);
+    if (moved) add_new_state(moved, moved_states);
+
+    moved = self_move(*current, *next, LEFT);
+    if (moved) add_new_state(moved, moved_states);
+
+    moved = self_move(*current, *next, RIGHT);
+    if (moved) add_new_state(moved, moved_states);
+
+    if (check_kill(*current, *next) || !check_limit(*next)) {
+        delete next;
+    } else {
+        next->log += (char)NO_DIRECTION;
+        add_new_state(next, moved_states);
+    }
+}
+
+void bfs(State *initial)
+{
+    statemap states;
+    next_1turn(initial, states);
+    int turn = 1;
+
+    while (!states.empty()) {
+        cerr << "turn: " << turn << " states: " << states.size() << endl;
+        statemap nstates;
+        statemap::iterator it, itend;
+        for (it=states.begin(), itend=states.end(); it != itend; ++it) {
+            next_1turn(it->second, nstates);
+            delete it->second;
+        }
+        states.swap(nstates);
+        ++turn;
+    }
+}
+
 void next_3turn(State *current, StateQueue &queue)
 {
     vector<State*> moved_states;
@@ -624,37 +716,8 @@ int main()
     priority_queue<State*, vector<State*>, comp_state> states;
     State initial_state(0, mine, enemies, dots);
     initial_state.calc_distance();
-    states.push(new State(initial_state));
-
-    int check_count = 100000;
-    int best = 100000;
-
-    while (!states.empty()) {
-        if (states.size() > 20000) {
-            cerr << "\ncutting down" << endl;
-            priority_queue<State*, vector<State*>, comp_state> new_states;
-            for (int i = 0; i < 16000; ++i) {
-                new_states.push(states.top());
-                states.pop();
-            }
-            while (!states.empty()) {
-                delete states.top();
-                states.pop();
-            }
-            states = new_states;
-        }
-        State *st = states.top();
-        states.pop();
-        if (st->dot_count < best) {
-            best = st->dot_count;
-        }
-        if (--check_count == 0) {
-            cerr << ' ' << st->dot_count << ' ';
-            check_count = best = 100000;
-        }
-        next_3turn(st, states);
-        delete st;
-    }
+    
+    bfs(&initial_state);
 
     if (global.max_turn == global.limit) {
         cerr << "Can't find any ways." << endl;
