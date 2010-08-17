@@ -643,37 +643,7 @@ int main()
             cerr << ' ' << st->dot_count << ' ';
             check_count = best = 100000;
         }
-#if 0
-        State *next = new State(*st);
-        for (vector<Enemy>::iterator it = next->enemies.begin();
-                it != next->enemies.end(); ++it) {
-            it->move(field, next->mine);
-        }
-        next->turn++;
-
-        State *moved;
-        moved = self_move(*st, *next, DOWN);
-        if (moved) states.push(moved);
-
-        moved = self_move(*st, *next, UP);
-        if (moved) states.push(moved);
-
-        moved = self_move(*st, *next, LEFT);
-        if (moved) states.push(moved);
-
-        moved = self_move(*st, *next, RIGHT);
-        if (moved) states.push(moved);
-        moved = 0;
-
-        if (check_kill(*st, *next) || !check_limit(*next)) {
-            delete next;
-        } else {
-            next->log += (char)NO_DIRECTION;
-            states.push(next);
-        }
-#else
         next_3turn(st, states);
-#endif
         delete st;
     }
 
