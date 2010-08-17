@@ -335,6 +335,7 @@ void read_quest(vector<Enemy> &enemies, Pos &mine, bitset<992> &dots)
 struct State {
     short turn;
     short dot_count;
+    short distance;
     Pos mine;
     vector<Enemy> enemies; //VHタイプの敵たち.
     bitset<992> dots;
@@ -343,18 +344,41 @@ struct State {
     State(int turn, const Pos &mine, const vector<Enemy> &enemies,
         const bitset<992> dots) :
         turn(turn), mine(mine), enemies(enemies),
-        dots(dots), dot_count(dots.count()), log()
+        dots(dots), dot_count(dots.count()), log(), distance(1)
     {}
 
     State(const State &st) :
         turn(st.turn), mine(st.mine), enemies(st.enemies),
-        dots(st.dots), dot_count(st.dot_count), log(st.log)
+        dots(st.dots), dot_count(st.dot_count), log(st.log),
+        distance(st.distance)
     {}
 
     int point() const {
-        return -dot_count*100;
+        return turn -distance + -dot_count*100;
+    }
+
+    void calc_distance() {
+        int mx = mine.x();
+        int my = mine.y();
+        int W = field.width;
+        int H = field.height;
+        int off = 0;
+        int dist;
+
+        for (dist = 1; dist < 100; ++dist) {
+            for (int y = my-dist; y <= my+dist; ++y) {
+                if (y < 1 || H <= y) continue;
+                int d = my-y < 0 ? y-my : my-y;
+                d = dist - d;
+                if ((mx - d > 1) && dots.test(y*W+mx-d)) goto dist_found;
+                if ((mx + d <=W) && dots.test(y*W+mx+d)) goto dist_found;
+            }
+        }
+        dist_found:
+        distance = dist;
     }
 };
+
 bool operator < (const State &lh, const State &rh) {
     return lh.point() < rh.point();
 }
@@ -458,15 +482,10 @@ bool check_goal(const State &s) {
 // true ならまだ可能性がある.
 bool check_limit(const State &state)
 {
-#if 1
+#if PAC3
     int mx = state.mine.x();
     int my = state.mine.y();
-    int W = field.width;
-    int H = field.height;
-    int off = 0;
-    int dist;
 
-#if PAC3
     // TODO: 行き止まり箇所の自動検出.
     if (state.dots.test(8*W+10) && state.dots.test(9*W+49)) {
         for (vector<Enemy>::const_iterator it = state.enemies.begin();
@@ -482,20 +501,7 @@ bool check_limit(const State &state)
     }
 #endif
 
-    for (dist = 1; dist < 100; ++dist) {
-        for (int y = my-dist; y <= my+dist; ++y) {
-            if (y < 1 || H <= y) continue;
-            int d = my-y < 0 ? y-my : my-y;
-            d = dist - d;
-            if ((mx - d > 1) && state.dots.test(y*W+mx-d)) goto dist_found;
-            if ((mx + d <=W) && state.dots.test(y*W+mx+d)) goto dist_found;
-        }
-    }
-dist_found:
-#else
-    int dist = 1;
-#endif
-    return (state.dot_count + state.turn + dist - 1) < global.limit;
+    return (state.dot_count + state.turn + state.distance - 1) < global.limit;
 }
 
 struct comp_state {
@@ -528,6 +534,7 @@ inline State* self_move(const State &curr, const State &next, int direction)
         }
     }
 
+    s->calc_distance();
     if (check_limit(*s)) return s;
     delete s;
     return 0;
@@ -602,6 +609,7 @@ void next_3turn(State *current, StateQueue &queue)
     }
 
     for (it = checked_states.begin(); it != checked_states.end(); ++it) {
+        it->second->calc_distance();
         queue.push(it->second);
     }
 }
@@ -615,6 +623,7 @@ int main()
 
     priority_queue<State*, vector<State*>, comp_state> states;
     State initial_state(0, mine, enemies, dots);
+    initial_state.calc_distance();
     states.push(new State(initial_state));
 
     int check_count = 100000;
